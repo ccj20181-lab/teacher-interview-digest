@@ -42,51 +42,50 @@ class BaseScraper(ABC):
         """获取随机 User-Agent"""
         return random.choice(self.USER_AGENTS)
 
-    def fetch(self, url: str, timeout: int = 30) -> Optional[requests.Response]:
+    def fetch(self, url: str, timeout: int = 30, delay: bool = True) -> Optional[requests.Response]:
         """
-        通用请求方法，带重试机制
+        通用请求方法，带重试机制（优化版本）
 
         Args:
             url: 请求的 URL
             timeout: 超时时间（秒）
+            delay: 是否添加请求延迟（并发模式下可关闭）
 
         Returns:
             Response 对象，失败返回 None
         """
-        max_retries = 3
-        backoff_factor = 2
+        max_retries = 2  # 减少重试次数，从3改为2
+        backoff_factor = 1.5  # 减少退避因子，从2改为1.5
 
         for attempt in range(max_retries):
             try:
-                # 随机延迟 2-5 秒，避免请求过快被封
-                if attempt > 0:
-                    delay = random.uniform(2, 5)
-                    print(f"  [重试 {attempt}/{max_retries}] 等待 {delay:.1f} 秒...")
-                    time.sleep(delay)
+                # 只在重试时添加延迟
+                if attempt > 0 and delay:
+                    wait_time = backoff_factor ** attempt
+                    time.sleep(wait_time)
 
                 response = self.session.get(url, timeout=timeout)
                 response.raise_for_status()
 
-                # 成功后随机延迟，避免连续请求
-                time.sleep(random.uniform(2, 5))
+                # 成功后根据是否并发模式决定延迟时间
+                if delay:
+                    time.sleep(random.uniform(0.5, 1.5))  # 从2-5秒减少到0.5-1.5秒
 
                 return response
 
             except requests.exceptions.Timeout:
-                print(f"  ⚠️  请求超时: {url}")
+                # 超时错误不打印，避免刷屏
                 if attempt == max_retries - 1:
                     return None
 
             except requests.exceptions.HTTPError as e:
-                print(f"  ⚠️  HTTP 错误 {e.response.status_code}: {url}")
+                # 只在特定错误时打印
                 if e.response.status_code in [403, 429]:
-                    # 被封禁或请求过多，增加延迟
-                    time.sleep(backoff_factor ** attempt * 5)
+                    time.sleep(backoff_factor ** attempt * 3)
                 if attempt == max_retries - 1:
                     return None
 
-            except Exception as e:
-                print(f"  ⚠️  请求失败: {e}")
+            except Exception:
                 if attempt == max_retries - 1:
                     return None
 

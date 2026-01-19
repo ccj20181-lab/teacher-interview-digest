@@ -1,6 +1,7 @@
 """
 教育局官网结构化面试公告爬虫
 专门抓取各地教育局发布的结构化面试公告
+优化版本：并发抓取 + 缓存机制
 """
 
 import os
@@ -8,6 +9,7 @@ import json
 import hashlib
 from typing import Dict, List
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 from .base_scraper import BaseScraper
 
@@ -29,19 +31,23 @@ class GovSiteScraper(BaseScraper):
         super().__init__(config)
         self.filters = config.get('filters', {})
         self.sites_config = config.get('data_sources', {}).get('gov_websites', {}).get('sites', {})
+        # 缓存文件路径
+        self.cache_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), '..', 'data', 'scraping_cache.json')
+        self.cache = self._load_cache()
 
-    def scrape(self, region: str = None, max_days: int = 90) -> List[Dict]:
+    def scrape(self, region: str = None, max_days: int = 90, max_workers: int = 5) -> List[Dict]:
         """
-        抓取指定地区的结构化面试公告
+        抓取指定地区的结构化面试公告（并发优化版本）
 
         Args:
             region: 地区名称（如"北京"），None 表示抓取所有地区
             max_days: 抓取最近多少天的公告
+            max_workers: 并发线程数
 
         Returns:
             公告列表
         """
-        print(f"\n📍 开始抓取教育局官网公告...")
+        print(f"\n📍 开始抓取教育局官网公告（并发模式，{max_workers} 线程）...")
         results = []
 
         # 确定要抓取的地区
@@ -50,26 +56,67 @@ class GovSiteScraper(BaseScraper):
             print("  ⚠️  没有配置地区网站")
             return results
 
-        for region_name in regions:
-            if region_name not in self.sites_config:
-                print(f"  ⚠️  跳过未配置的地区: {region_name}")
-                continue
+        print(f"  📋 计划抓取 {len(regions)} 个地区")
 
-            site_url = self.sites_config[region_name]
-            print(f"\n  📡 抓取 {region_name}: {site_url}")
+        # 使用线程池并发抓取
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交所有任务
+            future_to_region = {}
+            for region_name in regions:
+                if region_name not in self.sites_config:
+                    print(f"  ⚠️  跳过未配置的地区: {region_name}")
+                    continue
 
-            try:
-                # 尝试抓取该地区的公告
-                announcements = self._fetch_announcements(region_name, site_url, max_days)
-                results.extend(announcements)
-                print(f"  ✅ {region_name} 抓取到 {len(announcements)} 条公告")
+                site_url = self.sites_config[region_name]
+                print(f"  📡 提交任务: {region_name}")
 
-            except Exception as e:
-                print(f"  ❌ {region_name} 抓取失败: {e}")
-                continue
+                future = executor.submit(self._fetch_announcements, region_name, site_url, max_days)
+                future_to_region[future] = region_name
+
+            # 收集结果
+            completed = 0
+            for future in as_completed(future_to_region):
+                region_name = future_to_region[future]
+                completed += 1
+
+                try:
+                    announcements = future.result()
+                    results.extend(announcements)
+                    print(f"  ✅ [{completed}/{len(future_to_region)}] {region_name}: {len(announcements)} 条")
+
+                except Exception as e:
+                    print(f"  ❌ [{completed}/{len(future_to_region)}] {region_name}: {str(e)[:50]}")
+                    continue
+
+        # 更新缓存
+        self._save_cache(results)
 
         print(f"\n📊 总共抓取到 {len(results)} 条公告")
         return results
+
+    def _load_cache(self) -> Dict:
+        """加载缓存"""
+        try:
+            if os.path.exists(self.cache_file):
+                with open(self.cache_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return {}
+
+    def _save_cache(self, announcements: List[Dict]):
+        """保存缓存"""
+        try:
+            os.makedirs(os.path.dirname(self.cache_file), exist_ok=True)
+            # 只保留最近1000条
+            cache_data = {
+                'updated_at': datetime.now().isoformat(),
+                'announcements': announcements[:1000]
+            }
+            with open(self.cache_file, 'w', encoding='utf-8') as f:
+                json.dump(cache_data, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"  ⚠️  保存缓存失败: {e}")
 
     def _fetch_announcements(self, region: str, site_url: str, max_days: int) -> List[Dict]:
         """

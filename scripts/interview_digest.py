@@ -2,12 +2,14 @@
 """
 教师考编结构化面试考情收集主脚本
 每天自动收集各地教师招聘结构化面试信息，生成AI分析简报
+优化版本：添加时间统计和进度显示
 """
 
 import os
 import sys
 import json
 import pytz
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +19,31 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 from scrapers import GovSiteScraper
 from analyzers import InterviewAnalyzer
+
+
+class Timer:
+    """简单的计时器"""
+    def __init__(self):
+        self.start_time = None
+        self.stage_start = None
+
+    def start(self):
+        """开始计时"""
+        self.start_time = time.time()
+        self.stage_start = time.time()
+
+    def stage(self, stage_name: str):
+        """记录阶段时间"""
+        if self.stage_start:
+            elapsed = time.time() - self.stage_start
+            print(f"  ⏱️  {stage_name} 耗时: {elapsed:.1f} 秒")
+        self.stage_start = time.time()
+
+    def total(self) -> float:
+        """总耗时"""
+        if self.start_time:
+            return time.time() - self.start_time
+        return 0
 
 
 def load_config(config_path: str) -> dict:
@@ -40,13 +67,16 @@ def save_interview_schedule(announcements: list, output_file: str):
 
 def main():
     """主执行流程"""
+    timer = Timer()
+    timer.start()
+
     print("=" * 60)
     print("🎓 教师考编结构化面试考情收集")
     print("=" * 60)
 
     # 1. 加载配置
+    print(f"\n📄 加载配置...")
     config_path = SCRIPT_DIR / 'config.json'
-    print(f"\n📄 加载配置文件: {config_path}")
     config = load_config(str(config_path))
     print(f"✅ 配置加载成功")
     print(f"  - 目标地区: {', '.join(config['target_regions'])}")
@@ -55,25 +85,25 @@ def main():
     # 2. 初始化爬虫
     print(f"\n📡 初始化数据收集模块...")
     gov_scraper = GovSiteScraper(config)
+    timer.stage("初始化")
 
-    # 3. 抓取数据
+    # 3. 抓取数据（并发模式）
     print(f"\n" + "=" * 60)
-    print("开始抓取数据")
+    print("🚀 开始抓取数据（并发模式）")
     print("=" * 60)
 
     all_announcements = []
 
-    # 抓取教育局官网
-    for region in config['target_regions']:
-        try:
-            announcements = gov_scraper.scrape(
-                region=region,
-                max_days=config['filters']['max_age_days']
-            )
-            all_announcements.extend(announcements)
-        except Exception as e:
-            print(f"❌ 抓取 {region} 失败: {e}")
-            continue
+    try:
+        announcements = gov_scraper.scrape(
+            max_days=config['filters']['max_age_days'],
+            max_workers=5  # 5个并发线程
+        )
+        all_announcements.extend(announcements)
+    except Exception as e:
+        print(f"❌ 数据抓取失败: {e}")
+
+    timer.stage("数据抓取")
 
     print(f"\n📊 数据抓取完成:")
     print(f"  - 总计: {len(all_announcements)} 条公告")
@@ -87,7 +117,7 @@ def main():
 
     # 5. 生成简报
     print(f"\n" + "=" * 60)
-    print("生成 AI 简报")
+    print("📝 生成 AI 简报")
     print("=" * 60)
 
     today = datetime.now(pytz.timezone('Asia/Shanghai')).strftime('%Y-%m-%d')
@@ -99,9 +129,11 @@ def main():
         today=today
     )
 
+    timer.stage("AI 分析")
+
     # 6. 保存简报
     print(f"\n" + "=" * 60)
-    print("保存简报文件")
+    print("💾 保存简报文件")
     print("=" * 60)
 
     digests_dir = SCRIPT_DIR / config['output']['digests_dir']
@@ -131,9 +163,12 @@ def main():
     with open(digest_file_env, 'w') as f:
         f.write(str(digest_file))
 
+    timer.stage("保存文件")
+
     print(f"\n" + "=" * 60)
     print("✅ 执行完成！")
     print("=" * 60)
+    print(f"\n⏱️  总耗时: {timer.total():.1f} 秒")
     print(f"\n📄 简报文件: {digest_file}")
     print(f"📅 时间表文件: {schedule_file}")
 
