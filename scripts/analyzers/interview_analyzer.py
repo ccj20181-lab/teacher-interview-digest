@@ -7,15 +7,90 @@ import os
 import json
 import anthropic
 from typing import Dict, List
+from datetime import datetime
 
 
 class InterviewAnalyzer:
     """结构化面试考情分析器"""
 
-    # 主分析 Prompt
-    STRUCTURED_INTERVIEW_ANALYSIS_PROMPT = """你是一位专业的教师招聘考试分析专家，专注于**结构化面试**考情分析。请根据以下收集到的信息，生成一份结构化面试考情分析报告。
+    # 静态简报模板（空数据时使用）
+    STATIC_DIGEST_TEMPLATE = """# 教师考编结构化面试考情简报 ({today})
 
-今天日期: {today}
+> ⏰ 更新时间: {datetime}
+
+---
+
+## ⚠️ 今日数据状态
+
+**当前状态**: 未收集到新的结构化面试相关信息
+
+**数据统计**:
+- 🔍 今日抓取公告: {announcement_count} 条
+- 📝 收集到真题: {question_count} 道
+- ✅ 数据抓取正常: {is_normal}
+
+---
+
+## 💡 说明
+
+今日未检测到新的结构化面试相关公告。这可能是因为：
+1. 各地教育局/学校暂未发布新的招聘公告
+2. 公告发布时间不在我们的抓取周期内
+3. 网站结构变化导致抓取失败（我们会及时修复）
+
+---
+
+## 🎓 常备考建议
+
+虽然没有新的面试信息，但您可以：
+
+### 持续备考
+1. **关注结构化面试高频题型**:
+   - 综合分析类（教育政策、现象分析）
+   - 应急应变类（课堂突发事件处理）
+   - 人际沟通类（家校沟通、同事协作）
+   - 职业认知类（教师职业理解）
+
+2. **积累教育热点素材**:
+   - 双减政策、五育并举
+   - 新课标、核心素养
+   - 劳动教育、心理健康
+
+3. **关注官方渠道**:
+   - 各地教育局官网
+   - 人社局招聘公告
+   - 教育类招聘网站
+
+---
+
+## 🔗 资源推荐
+
+- **公告来源**: 全国各地教育局、人社局官网
+- **更新频率**: 每日自动抓取
+- **下次更新**: 明日 7:00
+
+---
+
+*本简报由 AI 自动生成，如有疑问请查看原始公告链接*
+"""
+
+    # 主分析 Prompt
+    STRUCTURED_INTERVIEW_ANALYSIS_PROMPT = """你是一位专业的教师招聘考试分析专家，专注于**结构化面试**考情分析。
+
+## ⚠️ 核心原则（强制执行）
+
+1. **绝对禁止编造信息**：如果没有数据，必须明确说明，不得虚构任何内容
+2. **数据真实性**：只分析提供的原始数据，不得添加未经证实的信息
+3. **空数据处理**：当数据为空时，明确说明"今日未收集到新信息"
+4. **链接验证**：只使用提供的真实链接，不得编造链接
+
+## 当前数据状态
+
+- 公告数量：{announcement_count}
+- 真题数量：{question_count}
+- 数据状态：{data_status}
+
+{empty_data_notice}
 
 ## 收集到的原始招聘和面试信息:
 {content}
@@ -170,14 +245,37 @@ class InterviewAnalyzer:
         Returns:
             生成的简报内容
         """
+        # 🔒 数据验证：检查是否为空数据
+        data_status = self._validate_data_before_analysis(announcements, questions)
+
+        # 如果没有数据，使用静态模板
+        if not data_status["has_data"]:
+            print(f"\n⚠️  数据状态检查:")
+            print(f"  - 公告数量: {len(announcements)}")
+            print(f"  - 真题数量: {len(questions)}")
+            print(f"  - 数据状态: 无有效数据")
+            print(f"  - 使用静态简报模板")
+            return self._generate_static_digest(
+                announcements,
+                questions,
+                today,
+                data_status["is_scraping_normal"]
+            )
+
         # 准备内容
         content = self._prepare_content(announcements, questions)
 
         print(f"\n🤖 调用 Claude API 生成简报...")
         print(f"  - 公告数量: {len(announcements)}")
         print(f"  - 真题数量: {len(questions)}")
+        print(f"  - 数据状态: 有有效数据")
 
         try:
+            # 准备空数据提示
+            empty_data_notice = ""
+            if len(announcements) == 0:
+                empty_data_notice = "**重要提醒**: 今日未收集到新的公告信息，请明确说明此情况，不要编造任何内容。"
+
             # 调用 Claude API
             response = self.client.messages.create(
                 model=self.ai_config["model"],
@@ -187,7 +285,11 @@ class InterviewAnalyzer:
                     "role": "user",
                     "content": self.STRUCTURED_INTERVIEW_ANALYSIS_PROMPT.format(
                         today=today,
-                        content=content
+                        content=content,
+                        announcement_count=len(announcements),
+                        question_count=len(questions),
+                        data_status="有数据" if len(announcements) > 0 else "无数据",
+                        empty_data_notice=empty_data_notice
                     )
                 }]
             )
@@ -198,7 +300,12 @@ class InterviewAnalyzer:
 
         except Exception as e:
             print(f"❌ 生成简报失败: {e}")
-            return self._generate_fallback_digest(announcements, today)
+            return self._generate_static_digest(
+                announcements,
+                questions,
+                today,
+                is_scraping_normal=False
+            )
 
     def extract_interview_info(self, announcement_text: str, url: str) -> Dict:
         """
@@ -263,8 +370,66 @@ class InterviewAnalyzer:
 
         return '\n'.join(content_parts)
 
+    def _validate_data_before_analysis(
+        self,
+        announcements: List[Dict],
+        questions: List[Dict]
+    ) -> Dict:
+        """
+        验证数据是否足够进行分析
+
+        Returns:
+            包含验证结果的字典:
+            - has_data: 是否有足够的数据
+            - is_scraping_normal: 抓取是否正常工作
+        """
+        # 判断是否有数据
+        has_announcements = len(announcements) > 0
+        has_questions = len(questions) > 0
+
+        # 如果有公告或真题，认为有数据
+        has_data = has_announcements or has_questions
+
+        # 判断抓取是否正常（这里简单判断，实际可以更复杂）
+        # 如果完全没有数据，可能是抓取失败，也可能是真的没有新公告
+        is_scraping_normal = True  # 默认认为正常
+
+        return {
+            "has_data": has_data,
+            "is_scraping_normal": is_scraping_normal
+        }
+
+    def _generate_static_digest(
+        self,
+        announcements: List[Dict],
+        questions: List[Dict],
+        today: str,
+        is_scraping_normal: bool = True
+    ) -> str:
+        """
+        生成静态简报（空数据时使用）
+
+        Args:
+            announcements: 公告列表（可能为空）
+            questions: 真题列表（可能为空）
+            today: 今天的日期
+            is_scraping_normal: 抓取是否正常
+
+        Returns:
+            静态简报内容
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        return self.STATIC_DIGEST_TEMPLATE.format(
+            today=today,
+            datetime=now,
+            announcement_count=len(announcements),
+            question_count=len(questions),
+            is_normal="是" if is_scraping_normal else "否（可能存在问题）"
+        )
+
     def _generate_fallback_digest(self, announcements: List[Dict], today: str) -> str:
-        """生成简化的备用简报"""
+        """生成简化的备用简报（保留用于向后兼容）"""
         lines = [
             f"# 教师考编结构化面试考情简报 ({today})",
             "",

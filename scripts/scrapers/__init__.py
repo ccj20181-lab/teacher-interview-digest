@@ -2,5 +2,7 @@
 
 from .base_scraper import BaseScraper
 from .gov_site_scraper import GovSiteScraper
+from .mock_scraper import MockScraper
+from .wechat_scraper import WechatScraper
 
-__all__ = ['BaseScraper', 'GovSiteScraper']
+__all__ = ['BaseScraper', 'GovSiteScraper', 'MockScraper', 'WechatScraper']

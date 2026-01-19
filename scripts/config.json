@@ -12,9 +12,20 @@
     "湖南"
   ],
   "data_sources": {
+    "wechat": {
+      "enabled": true,
+      "priority": 0,
+      "max_results": 30,
+      "description": "搜狗微信搜索数据源"
+    },
+    "mock": {
+      "enabled": false,
+      "priority": 1,
+      "description": "模拟数据源，用于演示和测试"
+    },
     "gov_websites": {
       "enabled": true,
-      "priority": 1,
+      "priority": 2,
       "sites": {
         "教育部": "http://www.moe.gov.cn/",
         "北京": "http://jw.beijing.gov.cn/",
@@ -26,7 +37,7 @@
     },
     "job_sites": {
       "enabled": true,
-      "priority": 2,
+      "priority": 3,
       "sites": {
         "教师招聘网": "https://www.jiaoshi.com.cn",
         "高校人才网": "https://www.gaoxiaojob.com"
@@ -34,7 +45,7 @@
     },
     "experience_platforms": {
       "enabled": true,
-      "priority": 3
+      "priority": 4
     }
   },
   "filters": {

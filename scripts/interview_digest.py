@@ -17,8 +17,9 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).parent
 sys.path.insert(0, str(SCRIPT_DIR))
 
-from scrapers import GovSiteScraper
+from scrapers import GovSiteScraper, MockScraper, WechatScraper
 from analyzers import InterviewAnalyzer
+from utils import DataValidator
 
 
 class Timer:
@@ -84,18 +85,43 @@ def main():
 
     # 2. 初始化爬虫
     print(f"\n📡 初始化数据收集模块...")
-    gov_scraper = GovSiteScraper(config)
+
+    # 按优先级选择数据源
+    wechat_enabled = config.get('data_sources', {}).get('wechat', {}).get('enabled', False)
+    mock_enabled = config.get('data_sources', {}).get('mock', {}).get('enabled', False)
+
+    scraper = None
+    scraper_type = ""
+
+    if wechat_enabled:
+        print("  ✅ 微信数据源已启用（搜狗微信搜索）")
+        scraper = WechatScraper(config)
+        scraper_type = "wechat"
+    elif mock_enabled:
+        print("  ✅ 模拟数据源已启用")
+        scraper = MockScraper(config)
+        scraper_type = "mock"
+    else:
+        print("  ✅ 使用政府网站数据源")
+        scraper = GovSiteScraper(config)
+        scraper_type = "gov"
+
     timer.stage("初始化")
 
-    # 3. 抓取数据（并发模式）
+    # 3. 抓取数据
     print(f"\n" + "=" * 60)
-    print("🚀 开始抓取数据（并发模式）")
+    if scraper_type == "wechat":
+        print("🚀 使用搜狗微信搜索")
+    elif scraper_type == "mock":
+        print("🚀 使用模拟数据源")
+    else:
+        print("🚀 开始抓取数据（并发模式）")
     print("=" * 60)
 
     all_announcements = []
 
     try:
-        announcements = gov_scraper.scrape(
+        announcements = scraper.scrape(
             max_days=config['filters']['max_age_days'],
             max_workers=5  # 5个并发线程
         )
@@ -107,6 +133,30 @@ def main():
 
     print(f"\n📊 数据抓取完成:")
     print(f"  - 总计: {len(all_announcements)} 条公告")
+
+    # 4.1 数据验证（新增）
+    print(f"\n" + "=" * 60)
+    print("🔍 数据验证")
+    print("=" * 60)
+
+    validator = DataValidator(timeout=5)
+    validation_result = validator.validate_announcements(
+        all_announcements,
+        check_links=False  # 不检查链接可访问性（加快速度）
+    )
+
+    print(f"✅ 数据验证完成:")
+    print(f"  - 总计: {validation_result['total']} 条")
+    print(f"  - 有效: {validation_result['valid']} 条")
+    print(f"  - 无效: {validation_result['invalid']} 条")
+    print(f"  - 验证率: {validation_result['validation_rate']:.1f}%")
+
+    if validation_result['errors']:
+        print(f"\n⚠️  发现 {len(validation_result['errors'])} 个数据问题:")
+        for error in validation_result['errors'][:5]:  # 只显示前5个
+            print(f"  - [{error['index']}] {error['title']}: {', '.join(error['errors'])}")
+
+    timer.stage("数据验证")
 
     # 4. 初始化 AI 分析器
     print(f"\n🤖 初始化 AI 分析器...")

@@ -27,6 +27,17 @@ class GovSiteScraper(BaseScraper):
         "面试时间"
     ]
 
+    # 教师招聘关键词（放宽范围，优先级更高）
+    RECRUITMENT_KEYWORDS = [
+        "教师招聘",
+        "招聘教师",
+        "教师录用",
+        "教师引进",
+        "公开招聘",
+        "教育系统",
+        "事业单位"
+    ]
+
     def __init__(self, config: Dict):
         super().__init__(config)
         self.filters = config.get('filters', {})
@@ -154,8 +165,15 @@ class GovSiteScraper(BaseScraper):
                     title = link.get_text(strip=True)
                     href = link['href']
 
-                    # 筛选包含面试关键词的公告
-                    if not any(keyword in title for keyword in self.INTERVIEW_KEYWORDS):
+                    # 合并所有关键词（面试 + 招聘）
+                    all_keywords = self.INTERVIEW_KEYWORDS + self.RECRUITMENT_KEYWORDS
+
+                    # 筛选包含关键词的公告（放宽范围）
+                    if not any(keyword in title for keyword in all_keywords):
+                        continue
+
+                    # 过滤掉太短的标题（可能是导航链接）
+                    if len(title) < 8:
                         continue
 
                     # 构建完整 URL
