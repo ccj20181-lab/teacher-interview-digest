@@ -217,6 +217,41 @@ def main():
 
     timer.stage("保存文件")
 
+    # 10. 微信推送（如果配置了 PUSHPLUS_TOKEN）
+    if config['output'].get('enable_wechat', False) and 'PUSHPLUS_TOKEN' in os.environ:
+        print(f"\n" + "=" * 60)
+        print("📱 微信推送")
+        print("=" * 60)
+
+        try:
+            # 导入推送函数
+            sys.path.insert(0, str(SCRIPT_DIR))
+            from send_pushplus import send_pushplus_notification
+
+            tz = pytz.timezone('Asia/Shanghai')
+            today = datetime.now(tz).strftime('%Y-%m-%d')
+            title = f"🎓 教师考编结构化面试简报 {today}"
+
+            print(f"📤 准备发送微信推送...")
+            print(f"   标题: {title}")
+            print(f"   简报长度: {len(digest)} 字符")
+
+            success = send_pushplus_notification(
+                token=os.environ['PUSHPLUS_TOKEN'],
+                title=title,
+                content=digest
+            )
+
+            if success:
+                print(f"✅ 微信推送成功")
+            else:
+                print(f"⚠️  微信推送失败")
+
+        except ImportError:
+            print(f"⚠️  未找到推送模块，跳过微信推送")
+        except Exception as e:
+            print(f"❌ 微信推送错误: {e}")
+
     print(f"\n" + "=" * 60)
     print("✅ 执行完成！")
     print("=" * 60)
