@@ -136,7 +136,9 @@ def main():
     print("💾 保存简报文件")
     print("=" * 60)
 
-    digests_dir = SCRIPT_DIR / config['output']['digests_dir']
+    # 使用项目根目录的 digests 文件夹
+    project_root = SCRIPT_DIR.parent
+    digests_dir = project_root / config['output']['digests_dir']
     digests_dir.mkdir(exist_ok=True)
 
     digest_file = digests_dir / f"interview-digest-{today}.md"
@@ -148,7 +150,7 @@ def main():
     print(f"   文件大小: {len(digest)} 字符")
 
     # 7. 保存面试时间表
-    schedule_file = SCRIPT_DIR.parent / 'data' / 'exam_schedule.json'
+    schedule_file = project_root / 'data' / 'exam_schedule.json'
     save_interview_schedule(all_announcements, str(schedule_file))
     print(f"✅ 面试时间表已保存: {schedule_file}")
 
@@ -159,7 +161,7 @@ def main():
             f.write(f"total_announcements={len(all_announcements)}\n")
 
     # 9. 设置环境变量供推送脚本使用
-    digest_file_env = SCRIPT_DIR.parent / 'digest_file.txt'
+    digest_file_env = project_root / 'digest_file.txt'
     with open(digest_file_env, 'w') as f:
         f.write(str(digest_file))
 
