@@ -68,8 +68,10 @@ def format_markdown_to_html(markdown_text: str) -> str:
             text = line.strip().lstrip('-*').strip()
             # 处理加粗
             text = re.sub(r'\*\*(.*?)\*\*', r'<b style="color: #7c3aed;">\1</b>', text)
-            # 保留链接格式
-            text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'<a href="\g<2>" target="_blank">\g<1></a>', text)
+            # 保留链接格式 - 使用函数避免转义问题
+            def link_repl(match):
+                return f'<a href="{match.group(2)}" target="_blank">{match.group(1)}</a>'
+            text = re.sub(r'\[([^\]]+)\]\([^\)]+\)', link_repl, text)
             html_lines.append(f'<li style="margin: 8px 0; line-height: 1.6;">{text}</li>')
 
         # 处理普通段落
@@ -81,8 +83,10 @@ def format_markdown_to_html(markdown_text: str) -> str:
             text = line.strip()
             # 处理加粗
             text = re.sub(r'\*\*(.*?)\*\*', r'<b style="color: #7c3aed;">\1</b>', text)
-            # 保留链接格式
-            text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\g<2>" target="_blank" style="color: #7c3aed;">\g<1></a>', text)
+            # 保留链接格式 - 使用函数避免转义问题
+            def link_repl(match):
+                return f'<a href="{match.group(2)}" target="_blank" style="color: #7c3aed;">{match.group(1)}</a>'
+            text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', link_repl, text)
             # 处理分隔线
             if text.strip() == '---':
                 html_lines.append('<hr style="border: none; border-top: 1px solid #e0e0e0; margin: 20px 0;">')
